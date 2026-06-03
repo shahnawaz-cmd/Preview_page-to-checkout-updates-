@@ -99,6 +99,9 @@ class PreloaderBase {
     const PREVIEW_URL = `${this.baseUrl}${vin}&wpPage=homepage&landing=normal`;
     const t0 = Date.now();
     
+    // Ensure clean state
+    await this.page.context().clearCookies();
+    
     // Attempt 1: Standard flow
     await this.page.goto(PREVIEW_URL, { waitUntil: 'domcontentloaded' });
     await this.page.screenshot({ path: `${EVIDENCE_DIR}/${this.prefix}-01-preview.png`, fullPage: true });
@@ -141,7 +144,44 @@ class EmailCachebackForWS extends PreloaderForSticker {
   async run(vin) { await this.runCachebackFlow(vin); }
 }
 
+class Previncheckflow {
+  constructor(page) {
+    this.vhr = new PreloaderForVHR(page);
+    this.page = page;
+  }
+  async run(vin) {
+    await this.vhr.run(vin);
+
+    // Verify screen absence after navigating back
+    console.log('🔙 Navigating back to preview...');
+    await this.page.goBack({ waitUntil: 'domcontentloaded' });
+    await this.page.waitForTimeout(1000); // Added human delay
+    
+    const searchScreenText = 'Please wait while we search records for your VIN';
+    const searchScreen = this.page.locator(`text="${searchScreenText}"`);
+    
+    await expect(searchScreen).not.toBeVisible({ timeout: 10000 });
+    console.log('✅ Screen did not appear after navigating back');
+
+    // Verify screen absence after refresh
+    console.log('🔄 Refreshing page...');
+    await this.page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(searchScreen).not.toBeVisible({ timeout: 10000 });
+    console.log('✅ Screen did not appear after refresh');
+  }
+}
+
 // ─── Test Cases ──────────────────────────────────────────────────────────────
+
+test('Preview → Preloader → Checkout flow (Previncheckflow)', async ({ page }) => {
+  test.setTimeout(180000);
+  try {
+    const vincheck = new Previncheckflow(page);
+    await vincheck.run(randomVin());
+  } finally {
+    await page.close();
+  }
+});
 
 test('Preview → Preloader → Checkout flow (Email Cacheback)', async ({ page }) => {
   test.setTimeout(300000);
